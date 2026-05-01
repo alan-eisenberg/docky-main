@@ -37,7 +37,17 @@ def _get_executor_pid():
                 capture_output=True, text=True, timeout=3
             )
             if result.returncode == 0:
-                return result.stdout.strip().split("\n")[0]
+                pids = result.stdout.strip().split()
+                for pid_str in pids:
+                    pid = int(pid_str)
+                    # Verify the process command actually matches (not just a PID reuse)
+                    try:
+                        with open(f"/proc/{pid}/comm") as f:
+                            comm = f.read().strip()
+                        if comm == name:
+                            return pid_str
+                    except (IOError, ValueError):
+                        continue
         return None
     except Exception:
         return None
@@ -133,16 +143,15 @@ def _stop_all_processes():
             if result.returncode == 0:
                 for pid_str in result.stdout.strip().split():
                     pid = int(pid_str)
+                    # Verify comm matches before killing
                     try:
-                        os.kill(pid, signal.SIGTERM)
-                        time.sleep(0.5)
-                        # Verify it died
-                        os.kill(pid, 0)
-                        os.kill(pid, signal.SIGKILL)
-                        print(f"[docky] Force killed {name} (PID: {pid})")
-                    except OSError:
-                        print(f"[docky] Stopped {name} (PID: {pid})")
-                stopped_any = True
+                        with open(f"/proc/{pid}/comm") as f:
+                            if f.read().strip() == name:
+                                os.kill(pid, signal.SIGKILL)
+                                print(f"[docky] Stopped {name} (PID: {pid})")
+                                stopped_any = True
+                    except (IOError, OSError):
+                        pass
         except Exception:
             pass
     if not stopped_any:

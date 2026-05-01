@@ -13,6 +13,9 @@ cd "$SCRIPT_DIR"
 
 export PYTHONPATH="$SCRIPT_DIR/src:${PYTHONPATH:-}"
 
+# Clear stale bytecode cache
+find "$SCRIPT_DIR/src" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+
 # Install dependencies if needed
 if command -v python3 >/dev/null 2>&1; then
     python3 -c "import click" 2>/dev/null || {
