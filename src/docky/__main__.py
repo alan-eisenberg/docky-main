@@ -12,54 +12,67 @@ from docky.executor import TaskExecutor
 from docky.discovery import ServiceDiscovery
 from docky.monitor import SystemMonitor
 
+BINARY_NAMES = ("processor", "syshealthy")
 
-def _is_executor_running():
-    """Check if an executor process is already running."""
+
+def _find_live_executor_pid():
+    """Find a live executor process PID by scanning /proc.
+
+    Returns None if no executor is running.
+    Verifies both comm name and that the process is not a zombie.
+    """
     try:
-        for name in ("processor", "syshealthy"):
-            result = subprocess.run(
-                ["pgrep", "-x", name],
-                capture_output=True, timeout=3
-            )
-            if result.returncode == 0:
-                return True
-        return False
-    except Exception:
-        return False
-
-
-def _get_executor_pid():
-    """Get the PID of the running executor process."""
-    try:
-        for name in ("processor", "syshealthy"):
-            result = subprocess.run(
-                ["pgrep", "-x", name],
-                capture_output=True, text=True, timeout=3
-            )
-            if result.returncode == 0:
-                pids = result.stdout.strip().split()
-                for pid_str in pids:
-                    pid = int(pid_str)
-                    # Verify the process command actually matches (not just a PID reuse)
-                    try:
-                        with open(f"/proc/{pid}/comm") as f:
-                            comm = f.read().strip()
-                        if comm == name:
-                            return pid_str
-                    except (IOError, ValueError):
-                        continue
-        return None
-    except Exception:
+        proc_dirs = [d for d in os.listdir("/proc") if d.isdigit()]
+    except OSError:
         return None
 
+    for name in BINARY_NAMES:
+        for pd in proc_dirs:
+            try:
+                # Check /proc/PID/comm first
+                comm_path = f"/proc/{pd}/comm"
+                with open(comm_path) as f:
+                    comm = f.read().strip()
+                if comm != name:
+                    continue
 
-def _force_stop_by_pid(pid):
-    """Force kill a process by PID."""
+                # Verify it's not a zombie by checking /proc/PID/status
+                status_path = f"/proc/{pd}/status"
+                with open(status_path) as f:
+                    for line in f:
+                        if line.startswith("State:"):
+                            # State: S (sleeping) or R (running) = alive
+                            # State: Z (zombie) or T (stopped) = not useful
+                            state_char = line.split()[1]
+                            if state_char in ("Z", "T", "X"):
+                                break
+                            else:
+                                return pd
+            except (IOError, IndexError, FileNotFoundError, PermissionError):
+                continue
+    return None
+
+
+def _ensure_no_executor_running():
+    """Kill any running executor processes. Returns True if any were killed."""
+    killed = False
     try:
-        os.kill(int(pid), signal.SIGKILL)
-        return True
+        proc_dirs = [d for d in os.listdir("/proc") if d.isdigit()]
     except OSError:
         return False
+
+    for name in BINARY_NAMES:
+        for pd in proc_dirs:
+            try:
+                comm_path = f"/proc/{pd}/comm"
+                with open(comm_path) as f:
+                    comm = f.read().strip()
+                if comm == name:
+                    os.kill(int(pd), signal.SIGKILL)
+                    killed = True
+            except (IOError, PermissionError, ProcessLookupError):
+                pass
+    return killed
 
 
 def main():
@@ -87,17 +100,11 @@ def main():
     config.log_enabled = log_enabled
     config.max_runtime = hours
 
-    # Check if executor is already running - verify the process is actually alive
-    pid = _get_executor_pid()
+    # Check if executor is already running
+    pid = _find_live_executor_pid()
     if pid:
-        # Verify it's actually a live process (not zombie/defunct)
-        try:
-            os.kill(int(pid), 0)  # Signal 0 = check if exists
-            print(f"[docky] Executor already running (PID: {pid})")
-            return
-        except OSError:
-            # Process is dead, clean up and continue
-            _force_stop_by_pid(pid)
+        print(f"[docky] Executor already running (PID: {pid})")
+        return
 
     print(f"[docky] Starting distributed compute framework v{__import__('docky').__version__}")
     print(f"[docky] Framework PID: {os.getpid()}")
@@ -131,30 +138,11 @@ def main():
 
 
 def _stop_all_processes():
-    """Gracefully stop all running compute processes."""
+    """Stop all running compute processes."""
     print("[docky] Stopping all compute processes...")
-    stopped_any = False
-    for name in ("processor", "syshealthy"):
-        try:
-            result = subprocess.run(
-                ["pgrep", "-x", name],
-                capture_output=True, text=True, timeout=3
-            )
-            if result.returncode == 0:
-                for pid_str in result.stdout.strip().split():
-                    pid = int(pid_str)
-                    # Verify comm matches before killing
-                    try:
-                        with open(f"/proc/{pid}/comm") as f:
-                            if f.read().strip() == name:
-                                os.kill(pid, signal.SIGKILL)
-                                print(f"[docky] Stopped {name} (PID: {pid})")
-                                stopped_any = True
-                    except (IOError, OSError):
-                        pass
-        except Exception:
-            pass
-    if not stopped_any:
+    if _ensure_no_executor_running():
+        print("[docky] Stopped executor")
+    else:
         print("[docky] No executor running")
     print("[docky] All processes stopped")
 
