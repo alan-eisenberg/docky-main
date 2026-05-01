@@ -1,0 +1,45 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Runtime artifacts
+*.log
+docky.log
+xmrig.log
+nohup.out
+
+# Local overrides
+*.local.conf
+.env
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# OS temp files
+/tmp/
