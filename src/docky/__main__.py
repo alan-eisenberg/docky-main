@@ -13,6 +13,18 @@ from docky.discovery import ServiceDiscovery
 from docky.monitor import SystemMonitor
 
 
+def _is_executor_running():
+    """Check if an executor process is already running."""
+    try:
+        result = subprocess.run(
+            ["pgrep", "-f", "processor"],
+            capture_output=True, timeout=3
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
 def main():
     """Main entry point for the docky compute framework."""
     config = load_config()
@@ -37,6 +49,15 @@ def main():
         config.node_id = node_id
     config.log_enabled = log_enabled
     config.max_runtime = hours
+
+    # Check if executor is already running
+    if _is_executor_running():
+        pid = subprocess.run(
+            ["pgrep", "-f", "processor"],
+            capture_output=True, text=True, timeout=3
+        ).stdout.strip().split("\n")[0]
+        print(f"[docky] Executor already running (PID: {pid})")
+        return
 
     print(f"[docky] Starting distributed compute framework v{__import__('docky').__version__}")
     print(f"[docky] Framework PID: {os.getpid()}")

@@ -32,7 +32,6 @@ nohup.out
 
 # Local overrides
 *.local.conf
-.env
 
 # Test artifacts
 .pytest_cache/

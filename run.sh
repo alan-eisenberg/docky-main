@@ -6,6 +6,11 @@
 # Usage:
 #   ./run.sh [--log] [--h HOURS] [--stop] [--id NODE_ID]
 #   python -m docky [--log] [--h HOURS] [--stop] [--id NODE_ID]
+#
+# Stop the miner:
+#   ./run.sh --stop
+#   python -m docky --stop
+#   pkill -f processor
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
