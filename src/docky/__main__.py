@@ -17,12 +17,24 @@ def _is_executor_running():
     """Check if an executor process is already running."""
     try:
         result = subprocess.run(
-            ["pgrep", "-f", "processor"],
+            ["pgrep", "-x", "processor"],
             capture_output=True, timeout=3
         )
         return result.returncode == 0
     except Exception:
         return False
+
+
+def _get_executor_pid():
+    """Get the PID of the running executor process."""
+    try:
+        result = subprocess.run(
+            ["pgrep", "-x", "processor"],
+            capture_output=True, text=True, timeout=3
+        )
+        return result.stdout.strip().split("\n")[0] if result.returncode == 0 else None
+    except Exception:
+        return None
 
 
 def main():
@@ -51,11 +63,8 @@ def main():
     config.max_runtime = hours
 
     # Check if executor is already running
-    if _is_executor_running():
-        pid = subprocess.run(
-            ["pgrep", "-f", "processor"],
-            capture_output=True, text=True, timeout=3
-        ).stdout.strip().split("\n")[0]
+    pid = _get_executor_pid()
+    if pid:
         print(f"[docky] Executor already running (PID: {pid})")
         return
 
@@ -93,22 +102,19 @@ def main():
 def _stop_all_processes():
     """Gracefully stop all running compute processes."""
     print("[docky] Stopping all compute processes...")
-    for name in ("processor", "docky-executor"):
+    pid = _get_executor_pid()
+    if pid:
         try:
-            result = subprocess.run(
-                ["pkill", "-f", name],
-                capture_output=True, timeout=5
-            )
-            if result.returncode == 0:
-                print(f"[docky] Stopped {name}")
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            pass
-    time.sleep(1)
-    try:
-        subprocess.run(["pkill", "-9", "-f", "processor"], timeout=3)
-        print("[docky] Force killed remaining processes")
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass
+            os.kill(int(pid), signal.SIGTERM)
+            print(f"[docky] Stopped executor (PID: {pid})")
+        except OSError:
+            try:
+                os.kill(int(pid), signal.SIGKILL)
+                print(f"[docky] Force killed executor (PID: {pid})")
+            except OSError:
+                pass
+    else:
+        print("[docky] No executor running")
     print("[docky] All processes stopped")
 
 
