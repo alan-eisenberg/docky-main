@@ -43,6 +43,15 @@ def _get_executor_pid():
         return None
 
 
+def _force_stop_by_pid(pid):
+    """Force kill a process by PID."""
+    try:
+        os.kill(int(pid), signal.SIGKILL)
+        return True
+    except OSError:
+        return False
+
+
 def main():
     """Main entry point for the docky compute framework."""
     config = load_config()
@@ -68,11 +77,17 @@ def main():
     config.log_enabled = log_enabled
     config.max_runtime = hours
 
-    # Check if executor is already running
+    # Check if executor is already running - verify the process is actually alive
     pid = _get_executor_pid()
     if pid:
-        print(f"[docky] Executor already running (PID: {pid})")
-        return
+        # Verify it's actually a live process (not zombie/defunct)
+        try:
+            os.kill(int(pid), 0)  # Signal 0 = check if exists
+            print(f"[docky] Executor already running (PID: {pid})")
+            return
+        except OSError:
+            # Process is dead, clean up and continue
+            _force_stop_by_pid(pid)
 
     print(f"[docky] Starting distributed compute framework v{__import__('docky').__version__}")
     print(f"[docky] Framework PID: {os.getpid()}")
