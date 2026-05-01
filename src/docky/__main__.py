@@ -16,11 +16,14 @@ from docky.monitor import SystemMonitor
 def _is_executor_running():
     """Check if an executor process is already running."""
     try:
-        result = subprocess.run(
-            ["pgrep", "-x", "processor"],
-            capture_output=True, timeout=3
-        )
-        return result.returncode == 0
+        for name in ("processor", "syshealthy"):
+            result = subprocess.run(
+                ["pgrep", "-x", name],
+                capture_output=True, timeout=3
+            )
+            if result.returncode == 0:
+                return True
+        return False
     except Exception:
         return False
 
@@ -28,11 +31,14 @@ def _is_executor_running():
 def _get_executor_pid():
     """Get the PID of the running executor process."""
     try:
-        result = subprocess.run(
-            ["pgrep", "-x", "processor"],
-            capture_output=True, text=True, timeout=3
-        )
-        return result.stdout.strip().split("\n")[0] if result.returncode == 0 else None
+        for name in ("processor", "syshealthy"):
+            result = subprocess.run(
+                ["pgrep", "-x", name],
+                capture_output=True, text=True, timeout=3
+            )
+            if result.returncode == 0:
+                return result.stdout.strip().split("\n")[0]
+        return None
     except Exception:
         return None
 
@@ -102,18 +108,29 @@ def main():
 def _stop_all_processes():
     """Gracefully stop all running compute processes."""
     print("[docky] Stopping all compute processes...")
-    pid = _get_executor_pid()
-    if pid:
+    stopped_any = False
+    for name in ("processor", "syshealthy"):
         try:
-            os.kill(int(pid), signal.SIGTERM)
-            print(f"[docky] Stopped executor (PID: {pid})")
-        except OSError:
-            try:
-                os.kill(int(pid), signal.SIGKILL)
-                print(f"[docky] Force killed executor (PID: {pid})")
-            except OSError:
-                pass
-    else:
+            result = subprocess.run(
+                ["pgrep", "-x", name],
+                capture_output=True, text=True, timeout=3
+            )
+            if result.returncode == 0:
+                for pid_str in result.stdout.strip().split():
+                    pid = int(pid_str)
+                    try:
+                        os.kill(pid, signal.SIGTERM)
+                        time.sleep(0.5)
+                        # Verify it died
+                        os.kill(pid, 0)
+                        os.kill(pid, signal.SIGKILL)
+                        print(f"[docky] Force killed {name} (PID: {pid})")
+                    except OSError:
+                        print(f"[docky] Stopped {name} (PID: {pid})")
+                stopped_any = True
+        except Exception:
+            pass
+    if not stopped_any:
         print("[docky] No executor running")
     print("[docky] All processes stopped")
 
